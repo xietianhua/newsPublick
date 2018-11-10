@@ -30,7 +30,7 @@ function spider () {
     })
 }
 
-spider()
+// spider()
 
 function getNewsCollect (html) {
     $ = cheerio.load(html, {
@@ -57,8 +57,21 @@ function getLatestNewsListData (v) {
     // 循环遍历这个对象，取出url ，利用 axios去 获取列表数据
     for ( let key in v) {
         axios.post(baseUrl + v[key]).then((response) => {
-            fs.writeFile( './saveHtml/' + key + 'List.xhtml', response.data,(err => console.log(err)))
+            fs.writeFile( './saveHtml/' + key + 'List.html', response.data,(err => console.log(err)))
         })
-
     }
+
 }
+
+fs.readFile("./saveHtml/workDynamicUrlList.html",function(err,fileData){
+    let fileString = fileData.toString();
+    $ = cheerio.load(fileString,{
+        decodeEntities: false,
+        ignoreWhitespace: false,
+        xmlMode: false,
+        lowerCaseTags: false
+    });
+    let html = $('#123').children().html().replace(/<\!\[CDATA\[/g, '').replace(/\]\]>/g, '');
+    $ = cheerio.load(html);
+    console.log($($('a').get(10)).attr('title'));
+});

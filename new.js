@@ -213,6 +213,3 @@ mammoth.extractRawText({path: './originText/en.docx'})
             })
         })
     });
-
-
-  1111111
