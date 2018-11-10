@@ -3,3 +3,7 @@ intellectualNews/
 originText/
 今日椰岛农民/
 
+#Editor directories and files
+.idea
+*.rar
+
