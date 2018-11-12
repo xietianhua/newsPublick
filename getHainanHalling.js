@@ -1,10 +1,16 @@
-// 第一步实现爬虫功能。
-const axios = require('axios');
-const fs = require('fs');
-const qs = require('qs');
-const schedule = require('node-schedule');
-const cheerio = require('cheerio');
+// 整体思路：通过首页获取 新闻列表页 ，通过列表页获取当天的新闻详情页(如果当天没有新闻详情页，就直接跳出程序。
+const axios = require('axios')
+const fs = require('fs')
+const cheerio = require('cheerio')
+const qs = require('qs')
 
+
+// 获得今日日期的方法
+function getTodayData () {
+    let d = new Date()
+    let today = d.getFullYear() + '-' + ((d.getMonth() + 1) < 10 ? '0' + (d.getMonth() + 1) : (d.getMonth() + 1)) + '-' + (d.getDate() < 10 ? '0' + (d.getDate()) : d.getDate())
+    return today
+}
 
 // 获取首页内容，制作数据源格式
 let newsCollect = {
@@ -13,10 +19,11 @@ let newsCollect = {
     NoticeUrl: '',
     cityNewsUrl: ''
 }
-
+let counter = 0
 let baseUrl = 'http://dost.hainan.gov.cn/'
 
-function spider() {
+
+function spider () {
     fs.mkdir('./saveHtml', err => console.log('创建文件夹失败'))
     return axios.post('http://dost.hainan.gov.cn/').then(response => {
         if (response.status === 200) {
@@ -31,10 +38,9 @@ function spider() {
         console.log(e)
     })
 }
+spider()
 
-// spider()
-
-function getNewsCollect(html) {
+function getNewsCollect (html) {
     $ = cheerio.load(html, {
         decodeEntities: false,
         ignoreWhitespace: false,
@@ -54,20 +60,65 @@ function getNewsCollect(html) {
     })
 }
 
-
-function getLatestNewsListData(v) {
-    // 循环遍历这个对象，取出url ，利用 axios去 获取列表数据
+// 整个执行完成以后，在执行 fs.readFile
+function getLatestNewsListData (v) {
     for (let key in v) {
         axios.post(baseUrl + v[key]).then((response) => {
-            fs.writeFile('./saveHtml/' + key + 'List.html', response.data, (err => console.log(err)))
+            fs.writeFile('./saveHtml/' + key + 'List.html', response.data, (err => {
+            }))
+            counter++
+            if (counter === 4) {   // 这是让前面函数完成的做法
+                getNewsDetailUrl()
+            }
         })
     }
 
 }
 
+function getNewsDetailUrl () {
+    let detailUrl = [], counterDouble = 0, test = 0   // 先用一个数组保存符合条件的详情连接，具体属于哪个类别下面，爬取详情页面的时候再做考虑。
+    for (let key in newsCollect) {
+        fs.readFile('./saveHtml/' + key + 'List.html', function (err, fileData) {
+            console.log(key)
+            counterDouble++
+            $ = cheerio.load(fileData.toString(), {
+                decodeEntities: false,
+                ignoreWhitespace: false,
+                xmlMode: true,
+                lowerCaseTags: false
+            })
+            let html = $('#123').children().html().replace(/<\!\[CDATA\[/g, '').replace(/\]\]>/g, '')
+            $ = cheerio.load(html)
+            for (let i = 0; i < $('tr').length; i++) {
+                let strTime = $('tr').eq(i).children().last().text().replace(/\[|\]/g, '')
+                if (strTime === getTodayData()) {
+                    detailUrl.push($('tr').eq(i).children().first().find('a').attr('href'))
+                } else {
+                    break  // 优化新能，新闻按照时间从新到就排序，不是今天的新闻直接pass
+                }
+            }
+            if (counterDouble === 4) {
+                getDetailMessage(detailUrl)
+            }
+        })
+    }
+}
+
+function getDetailMessage(detailUrl){
+    if(detailUrl.length){
+        let reg = RegExp(/http:\/\/dost.hainan.gov.cn\//g)
+        detailUrl.forEach((url)=>{
+            url = reg.test(url)?url:baseUrl+url;
+            getDetailData(url)
+        })
+    }else{
+        console.log( getTodayData()+"海南科技网站的新闻没有新的内容！")
+    }
+}
+
 // 详情页面信息获取。
-function getDetailData() {
-    axios.get('http://dost.hainan.gov.cn/art/2018/11/11/art_415_92836.html').then((response) => {
+function getDetailData(url) {
+    axios.get(url).then((response) => {
         fs.writeFile('./saveHtml/detail.html', response.data, (err => console.log(err)));
         $ = cheerio.load(response.data, {
             decodeEntities: false,
@@ -75,6 +126,11 @@ function getDetailData() {
             xmlMode: false,
             lowerCaseTags: false,
         });
+        // 循环为所有的 a 标签 加上前缀，不然下载不了附件。
+        console.log( $('#zoom').find('a').length);
+        for (let i = 0; i < $('#zoom').find('a').length; i++) {
+            $('a', '#zoom').eq(i).attr('href', baseUrl + $('a', '#zoom').eq(i).attr('href'))
+        }
         // 循环 img 为img标签src属性增加前缀
         for (let i = 0; i < $('#zoom').find('img').length; i++) {
             $('img', '#zoom').eq(i).attr('src', baseUrl + $('img', '#zoom').eq(i).attr('src'))
@@ -119,9 +175,9 @@ function callTnterface(bean) {
         let {accessToken, id} = response.data.data.rsData[0];
         bean['token'] = accessToken;
         bean['userId'] =id;
-        console.log(bean)
+        // console.log(bean)
         let param = {bean:JSON.stringify(bean)};
-        axios.post('http://hainanip.hist.gov.cn/hn_cms/api/admin/add/news?',qs.stringify(param),{
+        axios.post('http://hainanip.hist.gov.cn/hn_cms/api/admin/add/news?userId='+id+'&token='+accessToken,qs.stringify(param),{
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
@@ -136,30 +192,11 @@ function callTnterface(bean) {
 }
 
 
-// play schedule
 
-console.log("我要研究node里面的定时任务了");
 
-// 设置每天 8:00  10:00  12:00 18:00
-schedule.scheduleJob('45 05 8 * * *', function(){
-    spider()
-});
 
-schedule.scheduleJob('20 30 10 * * *', function(){
-    spider()
-});
 
-schedule.scheduleJob('15 30 12 * * *', function(){
-    spider()
-});
 
-schedule.scheduleJob('45 05 15 * * *', function(){
-    spider()
-});
-
-schedule.scheduleJob('45 05 18 * * *', function(){
-    spider()
-});
 
 
 
