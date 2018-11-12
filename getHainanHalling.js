@@ -2,6 +2,7 @@
 const axios = require('axios');
 const fs = require('fs');
 const qs = require('qs');
+const schedule = require('node-schedule');
 const cheerio = require('cheerio');
 
 
@@ -134,15 +135,31 @@ function callTnterface(bean) {
     })
 }
 
-getDetailData();
 
+// play schedule
 
+console.log("我要研究node里面的定时任务了");
 
+// 设置每天 8:00  10:00  12:00 18:00
+schedule.scheduleJob('45 05 8 * * *', function(){
+    spider()
+});
 
+schedule.scheduleJob('20 30 10 * * *', function(){
+    spider()
+});
 
+schedule.scheduleJob('15 30 12 * * *', function(){
+    spider()
+});
 
+schedule.scheduleJob('45 05 15 * * *', function(){
+    spider()
+});
 
-
+schedule.scheduleJob('45 05 18 * * *', function(){
+    spider()
+});
 
 
 
