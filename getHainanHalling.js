@@ -1,7 +1,8 @@
 // 第一步实现爬虫功能。
-const axios = require('axios')
-const fs = require('fs')
-const cheerio = require('cheerio')
+const axios = require('axios');
+const fs = require('fs');
+const qs = require('qs');
+const cheerio = require('cheerio');
 
 
 // 获取首页内容，制作数据源格式
@@ -14,8 +15,8 @@ let newsCollect = {
 
 let baseUrl = 'http://dost.hainan.gov.cn/'
 
-function spider () {
-    fs.mkdir('./saveHtml',err => console.log('创建文件夹失败'))
+function spider() {
+    fs.mkdir('./saveHtml', err => console.log('创建文件夹失败'))
     return axios.post('http://dost.hainan.gov.cn/').then(response => {
         if (response.status === 200) {
             getNewsCollect(response.data).then((urlList) => {
@@ -32,7 +33,7 @@ function spider () {
 
 // spider()
 
-function getNewsCollect (html) {
+function getNewsCollect(html) {
     $ = cheerio.load(html, {
         decodeEntities: false,
         ignoreWhitespace: false,
@@ -53,25 +54,95 @@ function getNewsCollect (html) {
 }
 
 
-function getLatestNewsListData (v) {
+function getLatestNewsListData(v) {
     // 循环遍历这个对象，取出url ，利用 axios去 获取列表数据
-    for ( let key in v) {
+    for (let key in v) {
         axios.post(baseUrl + v[key]).then((response) => {
-            fs.writeFile( './saveHtml/' + key + 'List.html', response.data,(err => console.log(err)))
+            fs.writeFile('./saveHtml/' + key + 'List.html', response.data, (err => console.log(err)))
         })
     }
 
 }
 
-fs.readFile("./saveHtml/workDynamicUrlList.html",function(err,fileData){
-    let fileString = fileData.toString();
-    $ = cheerio.load(fileString,{
-        decodeEntities: false,
-        ignoreWhitespace: false,
-        xmlMode: false,
-        lowerCaseTags: false
-    });
-    let html = $('#123').children().html().replace(/<\!\[CDATA\[/g, '').replace(/\]\]>/g, '');
-    $ = cheerio.load(html);
-    console.log($($('a').get(10)).attr('title'));
-});
+// 详情页面信息获取。
+function getDetailData() {
+    axios.get('http://dost.hainan.gov.cn/art/2018/11/11/art_415_92836.html').then((response) => {
+        fs.writeFile('./saveHtml/detail.html', response.data, (err => console.log(err)));
+        $ = cheerio.load(response.data, {
+            decodeEntities: false,
+            ignoreWhitespace: false,
+            xmlMode: false,
+            lowerCaseTags: false,
+        });
+        // 循环 img 为img标签src属性增加前缀
+        for (let i = 0; i < $('#zoom').find('img').length; i++) {
+            $('img', '#zoom').eq(i).attr('src', baseUrl + $('img', '#zoom').eq(i).attr('src'))
+        }
+        // 形成后台所需要的bean
+        let title = $('.xwlb').children('table').find('tr').eq(1).text();
+        let nowData = new Date();
+        // 判断生成 type parType，parType 是大类,type 是子类。
+        let identifier = $('table').eq(1).find("a").last().text().trim();
+        let bean = {
+            title: title.replace(/\n/g, '').trim(),
+            abs: $('#zoom').text().replace(/\n/g, '').trim() || title,
+            province: 25,
+            status: 1,
+            publicTime: nowData.valueOf(),
+            content: $('#zoom').html().replace(/\n/g, '').trim(),
+            source: $('.llcs').next().text().replace(/信息来源：/g, '') || "海南省科技厅"
+        };
+        if (["工作动态", '媒体聚焦', '市县科技'].indexOf(identifier) === -1) {
+            bean['parType'] = "通知公告"
+        } else {
+            bean['parType'] = "新闻动态";
+            bean['type'] = identifier;
+        }
+        return bean
+    }).then((bean) => {
+        callTnterface(bean)
+    })
+}
+function callTnterface(bean) {
+    // 调用登陆接口，获取token;
+    const data = {
+        username: "admin",
+        password: "admin"
+    };
+    axios.post('http://hainanip.hist.gov.cn/hn_cms/api/user/login/pwd', qs.stringify(data), {
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+    }).then((response) => {
+        console.log("登陆接口调用成功");
+        let {accessToken, id} = response.data.data.rsData[0];
+        bean['token'] = accessToken;
+        bean['userId'] =id;
+        console.log(bean)
+        let param = {bean:JSON.stringify(bean)};
+        axios.post('http://hainanip.hist.gov.cn/hn_cms/api/admin/add/news?',qs.stringify(param),{
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        }).then((response)=>{
+            console.log("新增接口调用成功");
+        }).catch(e => {
+            console.log("新增接口调用失败");
+        })
+    }).catch(e => {
+        console.log(e)
+    })
+}
+
+getDetailData();
+
+
+
+
+
+
+
+
+
+
+
