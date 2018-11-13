@@ -64,16 +64,32 @@ function getNewsCollect(html) {
 // 整个执行完成以后，在执行 fs.readFile
 function getLatestNewsListData(v) {
     for (let key in v) {
+        let detailUrl = [];
         axios.post(baseUrl + v[key]).then((response) => {
-            fs.writeFile('./saveHtml/' + key + 'List.html', response.data, (err => {}))
-            counter++
-            if (counter === 4) {   // 这是让前面函数完成的做法
-                setTimeout(getNewsDetailUrl,3000)
+           let  $ = cheerio.load(response.data, {
+                decodeEntities: false,
+                ignoreWhitespace: false,
+                xmlMode: false,
+                lowerCaseTags: false
+            });
+            let html = $('#123').children().html().replace(/<\!\[CDATA\[/g, '').replace(/\]\]>/g, '');
+            fs.writeFile('./abc.html',html);
+            $ = cheerio.load(html);
+            console.log($('tr').length);
+            for (let i = 0; i < $('tr').length; i++) {
+                let strTime = $('tr').eq(i).children().last().text().replace(/\[|\]/g, '')
+                if (strTime === getTodayData()) {
+                    detailUrl.push($('tr').eq(i).children().first().find('a').attr('href'))
+                } else {
+                    break  // 优化新能，新闻按照时间从新到就排序，不是今天的新闻直接pass
+                }
             }
+            console.log(detailUrl)
         })
     }
 
 }
+
 
 function getNewsDetailUrl() {
     let detailUrl = [], counterDouble = 0 // 先用一个数组保存符合条件的详情连接，具体属于哪个类别下面，爬取详情页面的时候再做考虑。
@@ -87,8 +103,7 @@ function getNewsDetailUrl() {
                 lowerCaseTags: false
             });
             let html = $('#123').children().html().replace(/<\!\[CDATA\[/g, '').replace(/\]\]>/g, '');
-            $ = cheerio.load(html);
-            console.log($('tr').length)
+            $ = cheerio.load(html)
             for (let i = 0; i < $('tr').length; i++) {
                 let strTime = $('tr').eq(i).children().last().text().replace(/\[|\]/g, '')
                 if (strTime === getTodayData()) {
