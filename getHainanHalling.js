@@ -23,7 +23,8 @@ let counter = 0;
 let baseUrl = 'http://dost.hainan.gov.cn/';
 
 
-function spider() {
+
+function spider () {
     fs.mkdir('./saveHtml', err => console.log('创建文件夹失败'))
     return axios.post('http://dost.hainan.gov.cn/').then(response => {
         if (response.status === 200) {
@@ -38,6 +39,7 @@ function spider() {
         console.log(e)
     })
 }
+spider()
 
 spider();
 
