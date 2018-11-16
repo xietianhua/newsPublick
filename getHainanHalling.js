@@ -4,11 +4,10 @@ const fs = require('fs');
 const cheerio = require('cheerio');
 const qs = require('qs');
 
-
 // 获得今日日期的方法
 function getTodayData() {
-    let d = new Date()
-    let today = d.getFullYear() + '-' + ((d.getMonth() + 1) < 10 ? '0' + (d.getMonth() + 1) : (d.getMonth() + 1)) + '-' + (d.getDate() < 10 ? '0' + (d.getDate()) : d.getDate())
+    let d = new Date();
+    let today = d.getFullYear() + '-' + ((d.getMonth() + 1) < 10 ? '0' + (d.getMonth() + 1) : (d.getMonth() + 1)) + '-' + (d.getDate() < 10 ? '0' + (d.getDate()) : d.getDate());
     return today
 }
 
@@ -18,13 +17,32 @@ let newsCollect = {
     hotNewsUrl: '',
     NoticeUrl: '',
     cityNewsUrl: ''
-}
-let counter = 0;
+};
+
+
 let baseUrl = 'http://dost.hainan.gov.cn/';
 
+function loginSystem() {
+    const data = {
+        username: "admin",
+        password: "admin"
+    };
+    axios.post('http://hainanip.hist.gov.cn/hn_cms/api/user/login/pwd', qs.stringify(data), {
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+    }).then((response) => {
+        let {accessToken, id} = response.data.data.rsData[0];
+        global.accessToken = accessToken;
+        global.id = id;
+        spider()
+    })
+}
 
 
-function spider () {
+loginSystem();  // 系统登录以后 才 默认执行一些操作。
+
+function spider() {
     fs.mkdir('./saveHtml', err => console.log('创建文件夹失败'))
     return axios.post('http://dost.hainan.gov.cn/').then(response => {
         if (response.status === 200) {
@@ -35,14 +53,10 @@ function spider () {
             })
         }
     }).catch(e => {
-        console.log('爬虫失败了,请检查网络连接')
+        console.log('爬虫失败了,请检查网络连接');
         console.log(e)
     })
 }
-spider()
-
-spider();
-
 function getNewsCollect(html) {
     $ = cheerio.load(html, {
         decodeEntities: false,
@@ -61,36 +75,27 @@ function getNewsCollect(html) {
             reject('列表页获取失败')
         }
     })
-}
+}  // 获取列表页集合。
+
 
 // 整个执行完成以后，在执行 fs.readFile
 function getLatestNewsListData(v) {
     for (let key in v) {
+        let detailUrl = [];
         axios.post(baseUrl + v[key]).then((response) => {
-            fs.writeFile('./saveHtml/' + key + 'List.html', response.data, (err => {}))
-            counter++
-            if (counter === 4) {   // 这是让前面函数完成的做法
-                setTimeout(getNewsDetailUrl,3000)
-            }
-        })
-    }
-
-}
-
-function getNewsDetailUrl() {
-    let detailUrl = [], counterDouble = 0 // 先用一个数组保存符合条件的详情连接，具体属于哪个类别下面，爬取详情页面的时候再做考虑。
-    for (let key in newsCollect) {
-        fs.readFile('./saveHtml/' + key + 'List.html', function (err, fileData) {
-            counterDouble++
-            $ = cheerio.load(fileData.toString(), {
+            let $ = cheerio.load(response.data, {
+                decodeEntities: false,
+                ignoreWhitespace: false,
+                xmlMode: false,
+                lowerCaseTags: false
+            });
+            let html = $('#123').children().html().replace(/<\!\[CDATA\[/g, '').replace(/\]\]>/g, '');
+            $ = cheerio.load(html.toString(), {
                 decodeEntities: false,
                 ignoreWhitespace: false,
                 xmlMode: true,
                 lowerCaseTags: false
-            });
-            let html = $('#123').children().html().replace(/<\!\[CDATA\[/g, '').replace(/\]\]>/g, '');
-            $ = cheerio.load(html);
-            console.log($('tr').length)
+            })
             for (let i = 0; i < $('tr').length; i++) {
                 let strTime = $('tr').eq(i).children().last().text().replace(/\[|\]/g, '')
                 if (strTime === getTodayData()) {
@@ -99,38 +104,47 @@ function getNewsDetailUrl() {
                     break  // 优化新能，新闻按照时间从新到就排序，不是今天的新闻直接pass
                 }
             }
-            if (counterDouble === 4) {
-                console.log(detailUrl);
-                // getDetailMessage(detailUrl)
-            }
+            return detailUrl
+        }).then((detailUrl) => {
+            // 先读取这个 js 文件
+            fs.readFile('recode.txt', function (err, fileData) {
+                if (err) throw err;
+                let arr = fileData.toString().split(',').filter(it => it).map((o) => {
+                    return "http://dost.hainan.gov.cn" + o
+                });
+                detailUrl.forEach((url, index) => {
+                    url = "http://dost.hainan.gov.cn" + url;
+                    console.log(url);
+                    console.log(arr.indexOf(url) !== -1);
+                    console.log(arr.length);
+                    if (arr.indexOf(url) !== -1 || !arr.length) {
+                        console.log("这条新闻已经被爬取过了，不需要在爬取了！")
+                    } else {
+                        getDetailData(url)
+                    }
+                });
+                if (detailUrl && detailUrl.length) {
+                    fs.appendFile('recode.txt', "," + detailUrl, (err) => {
+                        console.log(err)
+                    });
+                }
+            });
         })
     }
 }
+// 判断
 
-function getDetailMessage(detailUrl) {
-    if (detailUrl.length) {
-        let reg = RegExp(/http:\/\/dost.hainan.gov.cn\//g)
-        detailUrl.forEach((url) => {
-            url = reg.test(url) ? url : baseUrl + url;
-            getDetailData(url)
-        })
-    } else {
-        console.log(getTodayData() + "海南科技网站的新闻没有新的内容！")
-    }
-}
+
 
 // 详情页面信息获取。
 function getDetailData(url) {
     axios.get(url).then((response) => {
-        fs.writeFile('./saveHtml/detail.html', response.data, (err => console.log(err)));
         $ = cheerio.load(response.data, {
             decodeEntities: false,
             ignoreWhitespace: false,
             xmlMode: false,
             lowerCaseTags: false,
         });
-        // 循环为所有的 a 标签 加上前缀，不然下载不了附件。
-        console.log($('#zoom').find('a').length);
         for (let i = 0; i < $('#zoom').find('a').length; i++) {
             $('a', '#zoom').eq(i).attr('href', baseUrl + $('a', '#zoom').eq(i).attr('href'))
         }
@@ -165,32 +179,15 @@ function getDetailData(url) {
 }
 
 function callTnterface(bean) {
-    // 调用登陆接口，获取token;
-    const data = {
-        username: "admin",
-        password: "admin"
-    };
-    axios.post('http://hainanip.hist.gov.cn/hn_cms/api/user/login/pwd', qs.stringify(data), {
+    let param = {bean: JSON.stringify(bean)};
+    axios.post('http://hainanip.hist.gov.cn/hn_cms/api/admin/add/news?userId=' + global.id + '&token=' + global.accessToken, qs.stringify(param), {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
         }
     }).then((response) => {
-        console.log("登陆接口调用成功");
-        let {accessToken, id} = response.data.data.rsData[0];
-        bean['token'] = accessToken;
-        bean['userId'] = id;
-        // console.log(bean)
-        let param = {bean: JSON.stringify(bean)};
-        axios.post('http://hainanip.hist.gov.cn/hn_cms/api/admin/add/news?userId=' + id + '&token=' + accessToken, qs.stringify(param), {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-        }).then((response) => {
-            console.log("新增接口调用成功");
-        }).catch(e => {
-            console.log("新增接口调用失败");
-        })
+        console.log("新增接口调用成功");
     }).catch(e => {
-        console.log(e)
+        console.log("新增接口调用失败");
     })
 }
+
